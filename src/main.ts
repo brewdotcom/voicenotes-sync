@@ -1,4 +1,4 @@
-import { App, DataAdapter, Editor, normalizePath, Notice, Plugin, PluginManifest, TFile } from 'obsidian';
+import { App, DataAdapter, normalizePath, Notice, Plugin, PluginManifest, TFile } from 'obsidian';
 import VoiceNotesApi from './api/voicenotes';
 import { getFilenameFromUrl, isToday, formatDuration, formatDate, convertHtmlToMarkdown } from './utils';
 import { VoiceNotesPluginSettings } from './types';
@@ -6,123 +6,8 @@ import { sanitize } from 'sanitize-filename-ts';
 import { VoiceNotesSettingTab } from './settings';
 // @ts-ignore
 import * as jinja from 'jinja-js';
-
-const DEFAULT_SETTINGS: VoiceNotesPluginSettings = {
-  automaticSync: true,
-  syncTimeout: 60,
-  downloadAudio: false,
-  syncDirectory: 'voicenotes',
-  deleteSynced: false,
-  reallyDeleteSynced: false,
-  todoTag: '',
-  filenameDateFormat: 'YYYY-MM-DD',
-  frontmatterTemplate: `duration: {{duration}}
-created_at: {{created_at}}
-updated_at: {{updated_at}}
-{{tags}}`,
-  noteTemplate: `# {{ title }}
-
-Date: {{ date }}
-
-{% if summary %}
-## Summary
-
-{{ summary }}
-{% endif %}
-
-{% if points %}
-## Main points
-
-{{ points }}
-{% endif %}
-
-{% if attachments %}
-## Attachments
-
-{{ attachments }}
-{% endif %}
-
-{% if tidy %}
-## Tidy Transcript
-
-{{ tidy }}
-
-{% else %}
-## Transcript
-
-{{ transcript }}
-{% endif %}
-
-{% if embedded_audio_link %}
-{{ embedded_audio_link }}
-{% endif %}
-
-{% if audio_filename %}
-[[{{ audio_filename }}|Audio]]
-{% endif %}
-
-{% if todo %}
-## Todos
-
-{{ todo }}
-{% endif %}
-
-{% if email %}
-## Email
-
-{{ email }}
-{% endif %}
-
-{% if blog %}
-## Blog
-
-{{ blog }}
-{% endif %}
-
-{% if tweet %}
-## Tweet
-
-{{ tweet }}
-{% endif %}
-
-{% if custom %}
-## Others
-
-{{ custom }}
-{% endif %}
-
-{% if tags %}
-## Tags
-
-{{ tags }}
-{% endif %}
-
-{% if related_notes %}
-# Related Notes
-
-{{ related_notes }}
-{% endif %}
-
-{% if parent_note %}
-## Parent Note
-
-- {{ parent_note }}
-{% endif %}
-
-{% if subnotes %}
-## Subnotes
-
-{{ subnotes }}
-{% endif %}`,
-
-  filenameTemplate: `
-{{date}} {{title}}
-`,
-  excludeTags: [],
-  dateFormat: 'YYYY-MM-DD',
-  useCustomChangedAtProperty: false,
-  customChangedAtProperty: 'created_at',
-};
+import { AppConfig } from './config/app';
+import { registerCommands } from './commands';
 
 export default class VoiceNotesPlugin extends Plugin {
   settings: VoiceNotesPluginSettings;
@@ -147,68 +32,8 @@ export default class VoiceNotesPlugin extends Plugin {
       this.setupAutoSync();
     }
 
-    this.addCommand({
-      id: 'manual-sync-voicenotes',
-      name: 'Manual Sync Voicenotes',
-      callback: async () => await this.sync(false),
-    });
+    registerCommands(this);
 
-    this.addCommand({
-      id: 'insert-voicenotes-from-today',
-      name: "Insert Today's Voicenotes",
-      editorCallback: async (editor: Editor) => {
-        if (!this.settings.token) {
-          new Notice('No access available, please login in plugin settings');
-          return;
-        }
-
-        const todaysRecordings = await this.getTodaysSyncedRecordings();
-
-        if (todaysRecordings.length === 0) {
-          new Notice('No recordings from today found');
-          return;
-        }
-
-        const listOfToday = todaysRecordings.map((filename) => `- [[${filename}]]`).join('\n');
-        editor.replaceSelection(listOfToday);
-      },
-    });
-
-    this.addCommand({
-      id: 'delete-remote-voicenote',
-      name: 'Delete Remote Voicenote',
-      callback: async () => {
-        if (!this.settings.token) {
-          new Notice('No access available, please login in plugin settings');
-          return;
-        }
-        const activeFile = this.app.workspace.getActiveFile();
-        if (activeFile) {
-          const cache = this.app.metadataCache.getFileCache(activeFile);
-
-          if (cache && cache.frontmatter) {
-            const frontmatter = cache.frontmatter;
-
-            const confirmDelete = confirm(`Are you sure you want to delete "${frontmatter.title}"?`);
-            if (confirmDelete) {
-              try {
-                await this.vnApi.deleteRecording(frontmatter.recording_id);
-
-                // Successfully deleted, now remove recording_id from frontmatter using Obsidian API
-                await this.app.fileManager.processFrontMatter(activeFile, (fm) => {
-                  delete fm.recording_id;
-                });
-
-                new Notice('Recording deleted successfully and recording_id removed from note');
-              } catch (error) {
-                new Notice('Failed to delete recording from remote');
-                console.error('Error deleting recording:', error);
-              }
-            }
-          }
-        }
-      },
-    });
     this.registerEvent(
       this.app.metadataCache.on('deleted', (deletedFile, prevCache) => {
         if (prevCache.frontmatter?.recording_id) {
@@ -219,8 +44,7 @@ export default class VoiceNotesPlugin extends Plugin {
 
     // Timeout to give the app time to load
     setTimeout(async () => {
-      this.syncedRecordingIds = await this.getSyncedRecordingIds();
-      await this.sync(this.syncedRecordingIds.length === 0);
+      await this.sync();
     }, 1000);
   }
 
@@ -230,7 +54,7 @@ export default class VoiceNotesPlugin extends Plugin {
   }
 
   async loadSettings() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    this.settings = Object.assign({}, AppConfig.DEFAULT_SETTINGS, await this.loadData());
   }
 
   async saveSettings() {
@@ -243,7 +67,7 @@ export default class VoiceNotesPlugin extends Plugin {
     if (this.settings.automaticSync) {
       this.syncIntervalId = setInterval(
         () => {
-          this.sync(false);
+          this.sync();
         },
         this.settings.syncTimeout * 60 * 1000
       );
@@ -259,14 +83,6 @@ export default class VoiceNotesPlugin extends Plugin {
 
   async getRecordingIdFromFile(file: TFile): Promise<number | undefined> {
     return this.app.metadataCache.getFileCache(file)?.frontmatter?.['recording_id'];
-  }
-
-  async isRecordingFromToday(file: TFile): Promise<boolean> {
-    return isToday(
-      await this.app.metadataCache.getFileCache(file)?.frontmatter?.[
-        this.settings.useCustomChangedAtProperty ? this.settings.customChangedAtProperty : 'created_at'
-      ]
-    );
   }
 
   sanitizedTitle(title: string, created_at: string): string {
@@ -286,18 +102,6 @@ export default class VoiceNotesPlugin extends Plugin {
     return (await Promise.all(markdownFiles.map(async (file) => this.getRecordingIdFromFile(file)))).filter(
       (recordingId) => recordingId !== undefined
     ) as number[];
-  }
-
-  async getTodaysSyncedRecordings(): Promise<string[]> {
-    const { vault } = this.app;
-
-    const markdownFiles = vault.getMarkdownFiles().filter((file) => file.path.startsWith(this.settings.syncDirectory));
-
-    return (
-      await Promise.all(
-        markdownFiles.map(async (file) => ((await this.isRecordingFromToday(file)) ? file.basename : undefined))
-      )
-    ).filter((filename) => filename !== undefined) as string[];
   }
 
   async processNote(
@@ -346,7 +150,7 @@ export default class VoiceNotesPlugin extends Plugin {
           ])
         );
 
-        const { transcript } = recording;
+        const { transcript } = recording.transcript;
 
         // Destructure creations object to get individual variables if needed
         const { summary, points, tidy, todo, tweet, blog, email, custom } = creations;
@@ -496,10 +300,8 @@ export default class VoiceNotesPlugin extends Plugin {
     }
   }
 
-  async sync(fullSync: boolean = false) {
+  async sync() {
     try {
-      console.debug(`Sync running full? ${fullSync}`);
-
       this.syncedRecordingIds = await this.getSyncedRecordingIds();
 
       this.vnApi = new VoiceNotesApi({ token: this.settings.token });
@@ -518,12 +320,10 @@ export default class VoiceNotesPlugin extends Plugin {
       }
       const unsyncedCount = { count: 0 };
 
-      if (fullSync && recordings.links.next) {
+      if (recordings.links.next) {
         let nextPage = recordings.links.next;
 
         do {
-          console.debug(`Performing a full sync ${nextPage}`);
-
           const moreRecordings = await this.vnApi.getRecordingsFromLink(nextPage);
           recordings.data.push(...moreRecordings.data);
           nextPage = moreRecordings.links.next;
@@ -531,13 +331,14 @@ export default class VoiceNotesPlugin extends Plugin {
       }
 
       if (recordings) {
-        new Notice(`Syncing latest Voicenotes`);
         for (const recording of recordings.data) {
           await this.processNote(recording, voiceNotesDir, false, '', unsyncedCount);
         }
       }
 
-      new Notice(`Sync complete. ${unsyncedCount.count} recordings were not synced due to excluded tags.`);
+      new Notice(
+        `Voicenotes Sync complete. ${unsyncedCount.count ? unsyncedCount.count + 'recordings were not synced due to excluded tags.' : ''} `
+      );
     } catch (error) {
       console.error(error);
       if (Object.prototype.hasOwnProperty.call(error, 'status') !== 'undefined') {
