@@ -4,7 +4,7 @@ export class AppConfig {
   static get DEFAULT_SETTINGS(): VoiceNotesPluginSettings {
     return {
       automaticSync: true,
-      syncTimeout: 360,
+      syncTimeout: 180,
       downloadAudio: false,
       syncDirectory: 'voicenotes',
       deleteSynced: false,
