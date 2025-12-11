@@ -1,23 +1,21 @@
 import { App, DataAdapter, normalizePath, Notice, Plugin, PluginManifest, TFile } from 'obsidian';
 import VoiceNotesApi from './api/voicenotes';
-import { getFilenameFromUrl, isToday, formatDuration, formatDate, convertHtmlToMarkdown } from './utils';
-import { VoiceNotesPluginSettings } from './types';
+import { getFilenameFromUrl, formatDuration, formatDate, convertHtmlToMarkdown } from './utils';
+import { VoiceNote, VoiceNoteAttachment, VoiceNotesPluginSettings } from './types';
 import { sanitize } from 'sanitize-filename-ts';
 import { VoiceNotesSettingTab } from './settings';
-// @ts-ignore
+// @ts-expect-error - jinja-js has no TypeScript declarations, https://registry.yarnpkg.com/@types%2fjinja-js: Not found
 import * as jinja from 'jinja-js';
 import { AppConfig } from './config/app';
 import { registerCommands } from './commands';
+import { AttachmentType } from './enums';
 
 export default class VoiceNotesPlugin extends Plugin {
   settings: VoiceNotesPluginSettings;
   vnApi: VoiceNotesApi;
   fs: DataAdapter;
-  timeSinceSync: number = 0;
-  syncedRecordingIds: number[];
+  syncedRecordingIds: string[];
   syncIntervalId: NodeJS.Timeout | null = null;
-
-  ONE_SECOND = 1000;
 
   constructor(app: App, manifest: PluginManifest) {
     super(app, manifest);
@@ -81,7 +79,7 @@ export default class VoiceNotesPlugin extends Plugin {
     }
   }
 
-  async getRecordingIdFromFile(file: TFile): Promise<number | undefined> {
+  async getRecordingIdFromFile(file: TFile): Promise<string | undefined> {
     return this.app.metadataCache.getFileCache(file)?.frontmatter?.['recording_id'];
   }
 
@@ -94,18 +92,18 @@ export default class VoiceNotesPlugin extends Plugin {
   /**
    * Return the recording IDs that we've already synced
    */
-  async getSyncedRecordingIds(): Promise<number[]> {
+  async getSyncedRecordingIds(): Promise<string[]> {
     const { vault } = this.app;
 
     const markdownFiles = vault.getMarkdownFiles().filter((file) => file.path.startsWith(this.settings.syncDirectory));
 
     return (await Promise.all(markdownFiles.map(async (file) => this.getRecordingIdFromFile(file)))).filter(
       (recordingId) => recordingId !== undefined
-    ) as number[];
+    );
   }
 
   async processNote(
-    recording: any,
+    recording: VoiceNote,
     voiceNotesDir: string,
     isSubnote: boolean = false,
     parentTitle: string = '',
@@ -150,7 +148,7 @@ export default class VoiceNotesPlugin extends Plugin {
           ])
         );
 
-        const { transcript } = recording.transcript;
+        const { transcript } = recording;
 
         // Destructure creations object to get individual variables if needed
         const { summary, points, tidy, todo, tweet, blog, email, custom } = creations;
@@ -180,10 +178,10 @@ export default class VoiceNotesPlugin extends Plugin {
           }
           attachments = (
             await Promise.all(
-              recording.attachments.map(async (data: any) => {
-                if (data.type === 1) {
+              recording.attachments.map(async (data: VoiceNoteAttachment) => {
+                if (data.type === AttachmentType.LINK) {
                   return `- ${data.description}`;
-                } else if (data.type === 2) {
+                } else if (data.type === AttachmentType.IMAGE) {
                   const filename = getFilenameFromUrl(data.url);
                   const attachmentPath = normalizePath(`${attachmentsPath}/${filename}`);
                   await this.vnApi.downloadFile(this.fs, data.url, attachmentPath);
@@ -229,19 +227,13 @@ export default class VoiceNotesPlugin extends Plugin {
           related_notes:
             recording.related_notes && recording.related_notes.length > 0
               ? recording.related_notes
-                  .map(
-                    (relatedNote: { title: string; created_at: string }) =>
-                      `- [[${this.sanitizedTitle(relatedNote.title, relatedNote.created_at)}]]`
-                  )
+                  .map((relatedNote) => `- [[${this.sanitizedTitle(relatedNote.title, relatedNote.created_at)}]]`)
                   .join('\n')
               : null,
           subnotes:
             recording.subnotes && recording.subnotes.length > 0
               ? recording.subnotes
-                  .map(
-                    (subnote: { title: string; created_at: string }) =>
-                      `- [[${this.sanitizedTitle(subnote.title, subnote.created_at)}]]`
-                  )
+                  .map((subnote) => `- [[${this.sanitizedTitle(subnote.title, subnote.created_at)}]]`)
                   .join('\n')
               : null,
           attachments: attachments,

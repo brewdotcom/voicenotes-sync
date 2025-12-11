@@ -59,7 +59,7 @@ export default class VoiceNotesApi {
           'X-API-KEY': `${this.token}`,
         },
       });
-    } catch (error: any) {
+    } catch (error) {
       if (error.status === 401) {
         this.token = undefined;
         throw {
@@ -71,15 +71,13 @@ export default class VoiceNotesApi {
     }
   }
 
-  async getSignedUrl(recordingId: number): Promise<VoiceNoteSignedUrl | null> {
+  async getSignedUrl(recordingId: string): Promise<VoiceNoteSignedUrl | null> {
     if (!this.hasValidToken()) {
       return null;
     }
 
     try {
-      const data = await this.makeAuthenticatedRequest(
-        API_ROUTES.GET_SIGNED_URL.replace(':recordingId', String(recordingId))
-      );
+      const data = await this.makeAuthenticatedRequest(API_ROUTES.GET_SIGNED_URL.replace(':recordingId', recordingId));
 
       return data.json as VoiceNoteSignedUrl;
     } catch (error) {

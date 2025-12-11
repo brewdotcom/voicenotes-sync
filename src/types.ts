@@ -36,17 +36,32 @@ export interface VoiceNoteSignedUrl {
   url: string;
 }
 
+export interface VoiceNoteAttachment {
+  id: string;
+  type: number;
+  description: string;
+  url: string;
+  created_at: string;
+}
+
+export interface VoiceNoteCreation {
+  id: string;
+  type: string;
+  content: { data: string[] };
+  markdown_content: string;
+}
+
 export interface VoiceNote {
   id: string;
   recording_id: string;
   title: string;
   duration: number;
   transcript: string;
-  related_notes: any[];
-  tags: string[];
-  creations: any[];
-  subnotes: any[];
-  attachments: any[];
+  related_notes: VoiceNote[];
+  tags: { name: string }[];
+  creations: VoiceNoteCreation[];
+  subnotes: VoiceNote[];
+  attachments: VoiceNoteAttachment[];
   created_at: string;
   updated_at: string;
 }
