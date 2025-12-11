@@ -1,5 +1,6 @@
-import { Editor, Notice } from 'obsidian';
+import { Editor, Notice, TFile } from 'obsidian';
 import VoiceNotesPlugin from '../main';
+import { isToday } from '@/utils';
 
 export function registerInsertTodayNotesCommand(plugin: VoiceNotesPlugin) {
   plugin.addCommand({
@@ -26,12 +27,22 @@ export function registerInsertTodayNotesCommand(plugin: VoiceNotesPlugin) {
   const getTodaysSyncedRecordings = async (): Promise<string[]> => {
     const { vault } = plugin.app;
 
-    const markdownFiles = vault.getMarkdownFiles().filter((file) => file.path.startsWith(this.settings.syncDirectory));
+    const markdownFiles = vault
+      .getMarkdownFiles()
+      .filter((file) => file.path.startsWith(plugin.settings.syncDirectory));
 
     return (
       await Promise.all(
-        markdownFiles.map(async (file) => ((await this.isRecordingFromToday(file)) ? file.basename : undefined))
+        markdownFiles.map(async (file) => ((await isRecordingFromToday(file)) ? file.basename : undefined))
       )
     ).filter((filename) => filename !== undefined) as string[];
+  };
+
+  const isRecordingFromToday = async (file: TFile): Promise<boolean> => {
+    return isToday(
+      await plugin.app.metadataCache.getFileCache(file)?.frontmatter?.[
+        plugin.settings.useCustomChangedAtProperty ? plugin.settings.customChangedAtProperty : 'created_at'
+      ]
+    );
   };
 }

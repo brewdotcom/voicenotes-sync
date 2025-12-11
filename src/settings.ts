@@ -164,10 +164,10 @@ export class VoiceNotesSettingTab extends PluginSettingTab {
       .setDesc('Enable automatic syncing of voice notes at regular intervals')
       .addDropdown((dropdown) => {
         const options: Record<string, string> = {
-          '60': 'Every 1 hours',
-          '180': 'Every 3 hours',
-          '360': 'Every 6 hours',
-          '720': 'Every 12 hours',
+          '60': 'Every 1 hour',
+          '180': 'Every 3 hour',
+          '360': 'Every 6 hour',
+          '720': 'Every 12 hour',
           '1440': 'Every day',
         };
 
@@ -385,6 +385,10 @@ export class VoiceNotesSettingTab extends PluginSettingTab {
 
   private async toggleSyncingState(isSyncing: boolean = false): Promise<void> {
     document.querySelector('.sync-btn-label')!.textContent = isSyncing ? 'Syncing' : 'Sync Now';
-    document.querySelector('.sync-dots').setAttribute('style', isSyncing ? 'display: inline-flex' : 'display:none');
+
+    const syncDotsEl = document.querySelector('.sync-dots');
+    if (syncDotsEl) {
+      syncDotsEl.setAttribute('style', isSyncing ? 'display: inline-flex' : 'display:none');
+    }
   }
 }
