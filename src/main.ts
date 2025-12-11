@@ -329,7 +329,7 @@ export default class VoiceNotesPlugin extends Plugin {
       }
 
       new Notice(
-        `Voicenotes Sync complete. ${unsyncedCount.count ? unsyncedCount.count + 'recordings were not synced due to excluded tags.' : ''} `
+        `Voicenotes Sync complete. ${unsyncedCount.count ? unsyncedCount.count + ' recordings were not synced due to excluded tags.' : ''} `
       );
     } catch (error) {
       console.error(error);
