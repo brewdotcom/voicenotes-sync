@@ -20,17 +20,18 @@ export class VoiceNotesSettingTab extends PluginSettingTab {
 
     this.renderHeader(containerEl);
 
-    if (!this.plugin.settings.token) {
+    if (!this.getSetting('token')) {
       await this.renderLoginSection(containerEl);
-    } else {
-      this.vnApi.setToken(this.plugin.settings.token);
-      const userInfo = await this.vnApi.getUserInfo();
-      await this.renderUserSection(containerEl, userInfo);
-      await this.renderSyncSettings(containerEl);
-      await this.renderContentSettings(containerEl);
-      await this.renderTemplateSettings(containerEl);
-      await this.renderAdvancedSettings(containerEl);
+      return;
     }
+
+    this.vnApi.setToken(this.getSetting('token')!);
+    const userInfo = await this.vnApi.getUserInfo();
+    await this.renderUserSection(containerEl, userInfo);
+    await this.renderSyncSettings(containerEl);
+    await this.renderContentSettings(containerEl);
+    await this.renderTemplateSettings(containerEl);
+    await this.renderAdvancedSettings(containerEl);
   }
 
   private renderHeader(containerEl: HTMLElement): void {
@@ -63,12 +64,13 @@ export class VoiceNotesSettingTab extends PluginSettingTab {
       type: 'password',
       placeholder: 'Enter your Voicenotes Auth Token',
       cls: 'auth-input',
-    });
+    }) as HTMLInputElement;
+
+    inputEl.value = String(this.getSetting('token') ?? '');
 
     inputEl.addEventListener('input', async (event: Event) => {
       const target = event.target as HTMLInputElement;
-      this.plugin.settings.token = target.value;
-      await this.plugin.saveSettings();
+      await this.setSetting('token', target.value);
     });
 
     const btnWrapper = wrapper.createDiv({ cls: 'btn-wrapper' });
@@ -171,7 +173,7 @@ export class VoiceNotesSettingTab extends PluginSettingTab {
           '1440': 'Every day',
         };
 
-        const current = String(this.plugin.settings.syncTimeout ?? 30);
+        const current = String(this.getSetting('syncTimeout') ?? 30);
         if (!options[current]) {
           options[current] = `${current} minutes`;
         }
@@ -180,18 +182,17 @@ export class VoiceNotesSettingTab extends PluginSettingTab {
           .addOptions(options)
           .setValue(current)
           .onChange(async (value: string) => {
-            this.plugin.settings.syncTimeout = Number(value);
-            await this.plugin.saveSettings();
+            await this.setSetting('syncTimeout', Number(value));
           });
 
-        dropdown.setDisabled(!this.plugin.settings.automaticSync);
+        dropdown.setDisabled(!this.getSetting('automaticSync'));
 
         return dropdown;
       })
       .addToggle((toggle) =>
-        toggle.setValue(this.plugin.settings.automaticSync).onChange(
+        toggle.setValue(this.getSetting('automaticSync') ?? false).onChange(
           this.createToggleHandler('automaticSync', async () => {
-            if (this.plugin.settings.automaticSync) {
+            if (this.getSetting('automaticSync')) {
               await this.plugin.sync();
             }
             await this.display();
@@ -205,7 +206,7 @@ export class VoiceNotesSettingTab extends PluginSettingTab {
       .addText((text) =>
         text
           .setPlaceholder('voicenotes')
-          .setValue(this.plugin.settings.syncDirectory)
+          .setValue(this.getSetting('syncDirectory') ?? '')
           .onChange(this.createTextInputHandler('syncDirectory'))
       );
 
@@ -215,10 +216,12 @@ export class VoiceNotesSettingTab extends PluginSettingTab {
       .addText((text) =>
         text
           .setPlaceholder('archive, trash')
-          .setValue(this.plugin.settings.excludeTags.join(', '))
+          .setValue((this.getSetting('excludeTags') ?? []).join(', '))
           .onChange(async (value) => {
-            this.plugin.settings.excludeTags = value.split(',').map((folder) => folder.trim());
-            await this.plugin.saveSettings();
+            await this.setSetting(
+              'excludeTags',
+              value.split(',').map((t) => t.trim())
+            );
           })
       );
   }
@@ -232,7 +235,7 @@ export class VoiceNotesSettingTab extends PluginSettingTab {
       .addText((text) =>
         text
           .setPlaceholder('TODO')
-          .setValue(this.plugin.settings.todoTag)
+          .setValue(this.getSetting('todoTag') ?? '')
           .onChange(this.createTextInputHandler('todoTag'))
       );
 
@@ -240,7 +243,7 @@ export class VoiceNotesSettingTab extends PluginSettingTab {
       .setName('Download audio')
       .setDesc('Store and download the audio associated with the transcript')
       .addToggle((toggle) =>
-        toggle.setValue(this.plugin.settings.downloadAudio || false).onChange(this.createToggleHandler('downloadAudio'))
+        toggle.setValue(this.getSetting('downloadAudio') ?? false).onChange(this.createToggleHandler('downloadAudio'))
       );
 
     new Setting(containerEl)
@@ -249,7 +252,7 @@ export class VoiceNotesSettingTab extends PluginSettingTab {
       .addText((text) =>
         text
           .setPlaceholder('YYYY-MM-DD')
-          .setValue(this.plugin.settings.dateFormat || '')
+          .setValue(this.getSetting('dateFormat') ?? '')
           .onChange(this.createTextInputHandler('dateFormat'))
       );
 
@@ -259,7 +262,7 @@ export class VoiceNotesSettingTab extends PluginSettingTab {
       .addText((text) =>
         text
           .setPlaceholder('YYYY-MM-DD')
-          .setValue(this.plugin.settings.filenameDateFormat)
+          .setValue(this.getSetting('filenameDateFormat') ?? '')
           .onChange(this.createTextInputHandler('filenameDateFormat'))
       );
 
@@ -269,7 +272,7 @@ export class VoiceNotesSettingTab extends PluginSettingTab {
       .addText((text) =>
         text
           .setPlaceholder('{{date}} {{title}}')
-          .setValue(this.plugin.settings.filenameTemplate || '')
+          .setValue(this.getSetting('filenameTemplate') ?? '')
           .onChange(this.createTextInputHandler('filenameTemplate'))
       );
   }
@@ -299,7 +302,7 @@ export class VoiceNotesSettingTab extends PluginSettingTab {
         'If you have changed the frontmatter template above, you can specify here which property should be used, e.g. to include todays notes.'
       )
       .addToggle((toggle) =>
-        toggle.setValue(this.plugin.settings.useCustomChangedAtProperty || false).onChange(
+        toggle.setValue(this.getSetting('useCustomChangedAtProperty') ?? false).onChange(
           this.createToggleHandler('useCustomChangedAtProperty', async () => {
             await this.display();
           })
@@ -308,24 +311,25 @@ export class VoiceNotesSettingTab extends PluginSettingTab {
       .addText((text) => {
         text
           .setPlaceholder('Custom setting value')
-          .setValue(this.plugin.settings.customChangedAtProperty || '')
-          .setDisabled(!this.plugin.settings.useCustomChangedAtProperty)
+          .setValue(this.getSetting('customChangedAtProperty') ?? '')
+          .setDisabled(!this.getSetting('useCustomChangedAtProperty'))
           .onChange(this.createTextInputHandler('customChangedAtProperty'));
         return text;
       });
   }
 
-  private createTextInputHandler(settingKey: keyof VoiceNotesPluginSettings) {
-    return async (value: string) => {
-      (this.plugin.settings as any)[settingKey] = value;
-      await this.plugin.saveSettings();
+  private createTextInputHandler<K extends keyof VoiceNotesPluginSettings>(settingKey: K) {
+    return async (value: VoiceNotesPluginSettings[K]) => {
+      await this.setSetting(settingKey, value);
     };
   }
 
-  private createToggleHandler(settingKey: keyof VoiceNotesPluginSettings, afterChange?: () => Promise<void>) {
-    return async (value: boolean) => {
-      (this.plugin.settings as any)[settingKey] = value;
-      await this.plugin.saveSettings();
+  private createToggleHandler<K extends keyof VoiceNotesPluginSettings>(
+    settingKey: K,
+    afterChange?: () => Promise<void>
+  ) {
+    return async (value: VoiceNotesPluginSettings[K]) => {
+      await this.setSetting(settingKey, value);
       if (afterChange) {
         await afterChange();
       }
@@ -340,11 +344,9 @@ export class VoiceNotesSettingTab extends PluginSettingTab {
     settingKey: keyof VoiceNotesPluginSettings,
     containerEl: HTMLElement
   ): TextAreaComponent {
-    text
-      .setPlaceholder((this.plugin.settings as any)[settingKey])
-      .setValue((this.plugin.settings as any)[settingKey])
-      .onChange(this.createTextInputHandler(settingKey));
+    const current = String(this.getSetting(settingKey) ?? '');
 
+    text.setPlaceholder(current).setValue(current).onChange(this.createTextInputHandler(settingKey));
     text.inputEl.classList.add('autoresize');
     autoResizeTextArea(text.inputEl);
     text.inputEl.addEventListener('input', () => autoResizeTextArea(text.inputEl));
@@ -354,7 +356,13 @@ export class VoiceNotesSettingTab extends PluginSettingTab {
   }
 
   private async handleLogin(): Promise<void> {
-    this.vnApi.setToken(this.plugin.settings.token);
+    const token = this.getSetting('token');
+    if (!token) {
+      new Notice('Please provide a token first.');
+      return;
+    }
+
+    this.vnApi.setToken(token);
     const response = await this.vnApi.getUserInfo();
 
     if (response) {
@@ -369,26 +377,36 @@ export class VoiceNotesSettingTab extends PluginSettingTab {
 
   private async handleLogout(): Promise<void> {
     new Notice('Successfully logged out.');
-    this.plugin.settings.token = null;
-    await this.plugin.saveSettings();
+    await this.setSetting('token', null);
     await this.display();
   }
 
   private async handleSync(): Promise<void> {
     this.plugin.syncedRecordingIds = [];
-    this.toggleSyncingState(true);
+    await this.toggleSyncingState(true);
     await this.plugin.sync();
-    setTimeout(() => {
-      this.toggleSyncingState(false);
-    }, 500);
+    // ensure UI toggled off after sync completes
+    await this.toggleSyncingState(false);
   }
 
   private async toggleSyncingState(isSyncing: boolean = false): Promise<void> {
-    document.querySelector('.sync-btn-label')!.textContent = isSyncing ? 'Syncing' : 'Sync Now';
-
-    const syncDotsEl = document.querySelector('.sync-dots');
-    if (syncDotsEl) {
-      syncDotsEl.setAttribute('style', isSyncing ? 'display: inline-flex' : 'display:none');
+    const label = this.containerEl.querySelector('.sync-btn-label') as HTMLElement | null;
+    if (label) {
+      label.textContent = isSyncing ? 'Syncing' : 'Sync Now';
     }
+
+    const syncDotsEl = this.containerEl.querySelector('.sync-dots') as HTMLElement | null;
+    if (syncDotsEl) {
+      syncDotsEl.style.display = isSyncing ? 'inline-flex' : 'none';
+    }
+  }
+
+  private getSetting<K extends keyof VoiceNotesPluginSettings>(key: K): VoiceNotesPluginSettings[K] {
+    return this.plugin.settings[key];
+  }
+
+  private async setSetting<K extends keyof VoiceNotesPluginSettings>(key: K, value: VoiceNotesPluginSettings[K]) {
+    this.plugin.settings[key] = value;
+    await this.plugin.saveSettings();
   }
 }
