@@ -1,25 +1,28 @@
 import { App, DataAdapter, normalizePath, Notice, Plugin, PluginManifest, TFile } from 'obsidian';
 import VoiceNotesApi from './api/voicenotes';
-import { getFilenameFromUrl, formatDuration, formatDate, convertHtmlToMarkdown } from './utils';
 import { VoiceNote, VoiceNoteAttachment, VoiceNotesPluginSettings } from './types';
-import { sanitize } from 'sanitize-filename-ts';
 import { VoiceNotesSettingTab } from './settings';
-// @ts-expect-error - jinja-js has no TypeScript declarations, https://registry.yarnpkg.com/@types%2fjinja-js: Not found
+// @ts-expect-error - jinja-js has no TypeScript declarations.
 import * as jinja from 'jinja-js';
 import { AppConfig } from './config/app';
 import { registerCommands } from './commands';
 import { AttachmentType } from './enums';
+import { RecordingUtility } from './utilities';
+import { DateTimeHelper, FileHelper } from './helpers';
 
 export default class VoiceNotesPlugin extends Plugin {
   settings: VoiceNotesPluginSettings;
   vnApi: VoiceNotesApi;
   fs: DataAdapter;
   syncedRecording: Pick<VoiceNote, 'recording_id' | 'updated_at'>[] = [];
+  deletedLocalRecordings: Pick<VoiceNote, 'recording_id' | 'updated_at'>[] = [];
   syncIntervalId: NodeJS.Timeout | null = null;
+  recordingUtility: RecordingUtility;
 
   constructor(app: App, manifest: PluginManifest) {
     super(app, manifest);
     this.fs = app.vault.adapter;
+    this.recordingUtility = new RecordingUtility(this);
   }
 
   async onload() {
@@ -38,7 +41,13 @@ export default class VoiceNotesPlugin extends Plugin {
           this.syncedRecording = this.syncedRecording.filter(
             (r) => r.recording_id !== prevCache.frontmatter?.recording_id
           );
-          this.settings.lastSyncedNoteUpdatedAt = null;
+
+          this.deletedLocalRecordings.push({
+            recording_id: prevCache.frontmatter?.recording_id,
+            updated_at: prevCache.frontmatter?.updated_at,
+          });
+
+          this.settings.lastSyncedNoteUpdatedAt = RecordingUtility.getLatestNote(this.syncedRecording)?.updated_at;
           await this.saveSettings();
         }
       })
@@ -52,6 +61,8 @@ export default class VoiceNotesPlugin extends Plugin {
 
   onunload() {
     this.syncedRecording = [];
+    this.deletedLocalRecordings = [];
+    this.settings.lastSyncedNoteUpdatedAt = null;
     this.clearAutoSync();
   }
 
@@ -81,12 +92,6 @@ export default class VoiceNotesPlugin extends Plugin {
       clearInterval(this.syncIntervalId);
       this.syncIntervalId = null;
     }
-  }
-
-  sanitizedTitle(title: string, created_at: string): string {
-    const date = formatDate(created_at, this.settings.filenameDateFormat);
-    const generatedTitle = this.settings.filenameTemplate.replace('{{date}}', date).replace('{{title}}', title);
-    return sanitize(generatedTitle);
   }
 
   /**
@@ -125,7 +130,7 @@ export default class VoiceNotesPlugin extends Plugin {
         return;
       }
 
-      const title = this.sanitizedTitle(recording.title, recording.created_at);
+      const title = this.recordingUtility.sanitizedTitle(recording.title, recording.created_at);
       const recordingPath = normalizePath(`${voiceNotesDir}/${title}.md`);
 
       // Process sub-notes, whether the note already exists or not
@@ -192,7 +197,7 @@ export default class VoiceNotesPlugin extends Plugin {
                 if (data.type === AttachmentType.LINK) {
                   return `- ${data.description}`;
                 } else if (data.type === AttachmentType.IMAGE) {
-                  const filename = getFilenameFromUrl(data.url);
+                  const filename = FileHelper.getFilenameFromUrl(data.url);
                   const attachmentPath = normalizePath(`${attachmentsPath}/${filename}`);
                   await this.vnApi.downloadFile(this.fs, data.url, attachmentPath);
                   return `- ![[${filename}]]`;
@@ -218,10 +223,10 @@ export default class VoiceNotesPlugin extends Plugin {
         const context = {
           recording_id: recording.recording_id,
           title: recording.title,
-          date: formatDate(recording.created_at, this.settings.dateFormat),
-          duration: formatDuration(recording.duration),
-          created_at: formatDate(recording.created_at, this.settings.dateFormat),
-          updated_at: formatDate(recording.updated_at, this.settings.dateFormat),
+          date: DateTimeHelper.formatDate(recording.created_at, this.settings.dateFormat),
+          duration: DateTimeHelper.formatDuration(recording.duration),
+          created_at: DateTimeHelper.formatDate(recording.created_at, this.settings.dateFormat),
+          updated_at: DateTimeHelper.formatDate(recording.updated_at, this.settings.dateFormat),
           transcript: transcript,
           embedded_audio_link: embeddedAudioLink,
           audio_filename: audioFilename,
@@ -237,13 +242,16 @@ export default class VoiceNotesPlugin extends Plugin {
           related_notes:
             recording.related_notes && recording.related_notes.length > 0
               ? recording.related_notes
-                  .map((relatedNote) => `- [[${this.sanitizedTitle(relatedNote.title, relatedNote.created_at)}]]`)
+                  .map(
+                    (relatedNote) =>
+                      `- [[${this.recordingUtility.sanitizedTitle(relatedNote.title, relatedNote.created_at)}]]`
+                  )
                   .join('\n')
               : null,
           subnotes:
             recording.subnotes && recording.subnotes.length > 0
               ? recording.subnotes
-                  .map((subnote) => `- [[${this.sanitizedTitle(subnote.title, subnote.created_at)}]]`)
+                  .map((subnote) => `- [[${this.recordingUtility.sanitizedTitle(subnote.title, subnote.created_at)}]]`)
                   .join('\n')
               : null,
           attachments: attachments,
@@ -252,7 +260,7 @@ export default class VoiceNotesPlugin extends Plugin {
 
         // Render the template using Jinja
         let note = jinja.render(this.settings.noteTemplate, context).replace(/\n{3,}/g, '\n\n');
-        note = convertHtmlToMarkdown(note);
+        note = FileHelper.convertHtmlToMarkdown(note);
 
         // Recording ID is required so we force it
         const recordingIdTemplate = `recording_id: {{recording_id}}\n`;
@@ -342,22 +350,19 @@ export default class VoiceNotesPlugin extends Plugin {
         } while (nextPage);
       }
 
-      if (recordings) {
+      if (recordings?.data?.length > 0) {
         for (const recording of recordings.data) {
           await this.processNote(recording, voiceNotesDir, false, '', unsyncedCount);
         }
 
-        const latestTs = recordings.data
-          .map((r) => r.updated_at)
-          .filter(Boolean)
-          .map((s) => new Date(s).getTime())
-          .filter((t) => !Number.isNaN(t));
+        console.log(`Synced ${recordings.data.length} recordings from Voice Notes.`);
 
-        if (latestTs.length > 0) {
-          const maxTs = Math.max(...latestTs);
+        const maxTs = RecordingUtility.getLatestNote(recordings.data)?.updated_at;
+        if (maxTs) {
           this.settings.lastSyncedNoteUpdatedAt = new Date(maxTs).toISOString();
-          await this.saveSettings();
         }
+
+        await this.saveSettings();
       }
 
       new Notice(

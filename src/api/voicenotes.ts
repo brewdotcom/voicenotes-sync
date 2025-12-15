@@ -1,6 +1,12 @@
-import { DataAdapter, Notice, requestUrl, RequestUrlParam, RequestUrlResponse } from 'obsidian';
-import { User, VoiceNoteRecordings, VoiceNoteSignedUrl } from '../types';
+import { DataAdapter, Notice, requestUrl, RequestUrlResponse } from 'obsidian';
+import { User, VoiceNote, VoiceNoteRecordings, VoiceNoteSignedUrl } from '../types';
 import { API_ROUTES, BASE_API_URL } from '@/constants';
+
+type VoiceNotesApiOptions = {
+  token?: string;
+  lastSyncedNoteUpdatedAt?: string;
+  deletedLocalRecordings?: Pick<VoiceNote, 'recording_id' | 'updated_at'>[];
+};
 
 export default class VoiceNotesApi {
   private token?: string;
@@ -10,13 +16,19 @@ export default class VoiceNotesApi {
    */
   private lastSyncedNoteUpdatedAt?: string;
 
-  constructor(options: { token?: string; lastSyncedNoteUpdatedAt?: string } = {}) {
+  private deletedLocalRecordings: Pick<VoiceNote, 'recording_id' | 'updated_at'>[] = [];
+
+  constructor(options: VoiceNotesApiOptions = {}) {
     if (options.token) {
       this.token = options.token;
     }
 
     if (options.lastSyncedNoteUpdatedAt) {
       this.lastSyncedNoteUpdatedAt = options.lastSyncedNoteUpdatedAt;
+    }
+
+    if (options.deletedLocalRecordings) {
+      this.deletedLocalRecordings = options.deletedLocalRecordings;
     }
   }
 
@@ -48,7 +60,7 @@ export default class VoiceNotesApi {
   /**
    * Makes an authenticated request with consistent error handling
    */
-  private async makeAuthenticatedRequest(endpoint: string, options: Partial<RequestUrlParam> = {}): Promise<any> {
+  private async makeAuthenticatedRequest(endpoint: string, options: Partial<RequestInit> = {}): Promise<any> {
     if (!this.hasValidToken()) {
       throw new Error('No valid authentication token');
     }
@@ -150,8 +162,14 @@ export default class VoiceNotesApi {
     }
 
     try {
+      const options: Partial<RequestInit> = {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      };
       // This uses the full link URL (for pagination)
-      const data = await this.makeAuthenticatedRequest(link);
+      const data = await this.makeAuthenticatedRequest(link, options);
       return data as VoiceNoteRecordings;
     } catch (error) {
       console.error('Failed to get recordings from link:', error);
@@ -165,12 +183,19 @@ export default class VoiceNotesApi {
     }
 
     try {
-      const data = await this.makeAuthenticatedRequest(
-        API_ROUTES.GET_RECORDINGS +
-          (this.lastSyncedNoteUpdatedAt
-            ? `?last_synced_note_updated_at=${encodeURIComponent(this.lastSyncedNoteUpdatedAt)}`
-            : '')
-      );
+      const options: Partial<RequestInit> = {
+        body: JSON.stringify({
+          obsidian_deleted_recording_ids: this.deletedLocalRecordings.map((r) => r.recording_id),
+          last_synced_note_updated_at: this.lastSyncedNoteUpdatedAt,
+        }),
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      };
+
+      const data = await this.makeAuthenticatedRequest(API_ROUTES.GET_RECORDINGS, options);
+
       return data as VoiceNoteRecordings;
     } catch (error) {
       console.error('Failed to get recordings:', error);
