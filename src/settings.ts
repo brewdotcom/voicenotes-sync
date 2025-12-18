@@ -88,7 +88,7 @@ export class VoiceNotesSettingTab extends PluginSettingTab {
     });
 
     extButton.addEventListener('click', () => {
-      window.open('https://voicenotes.com/app?obsidian=true#settings', '_blank');
+      window.open('https://stagingview.voicenotes.com/app?obsidian=true#settings', '_blank');
     });
 
     const externalIcon = extButton.createDiv();
