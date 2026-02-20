@@ -112,6 +112,7 @@ Date: {{ date }}
 
       filenameTemplate: `{{date}} {{title}}`,
       excludeTags: [],
+      tagFilterMode: 'exclude',
       dateFormat: 'YYYY-MM-DD',
       useCustomChangedAtProperty: false,
       customChangedAtProperty: 'created_at',

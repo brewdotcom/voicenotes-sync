@@ -6,6 +6,8 @@ type VoiceNotesApiOptions = {
   token?: string;
   lastSyncedNoteUpdatedAt?: string;
   deletedLocalRecordings?: Pick<VoiceNote, 'recording_id' | 'updated_at'>[];
+  filterTags?: string[];
+  tagFilterMode?: 'include' | 'exclude';
 };
 
 export default class VoiceNotesApi {
@@ -18,6 +20,10 @@ export default class VoiceNotesApi {
 
   private deletedLocalRecordings: Pick<VoiceNote, 'recording_id' | 'updated_at'>[] = [];
 
+  private filterTags: string[] = [];
+
+  private tagFilterMode: 'include' | 'exclude' = 'exclude';
+
   constructor(options: VoiceNotesApiOptions = {}) {
     if (options.token) {
       this.token = options.token;
@@ -29,6 +35,14 @@ export default class VoiceNotesApi {
 
     if (options.deletedLocalRecordings) {
       this.deletedLocalRecordings = options.deletedLocalRecordings;
+    }
+
+    if (options.filterTags) {
+      this.filterTags = options.filterTags;
+    }
+
+    if (options.tagFilterMode) {
+      this.tagFilterMode = options.tagFilterMode;
     }
   }
 
@@ -235,6 +249,8 @@ export default class VoiceNotesApi {
         body: JSON.stringify({
           obsidian_deleted_recording_ids: this.deletedLocalRecordings.map((r) => r.recording_id),
           last_synced_note_updated_at: this.lastSyncedNoteUpdatedAt,
+          filter_tags: this.filterTags,
+          tag_filter_mode: this.tagFilterMode,
         }),
         method: 'POST',
         headers: {

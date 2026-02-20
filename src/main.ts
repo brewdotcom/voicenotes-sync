@@ -142,15 +142,6 @@ export default class VoiceNotesPlugin extends Plugin {
         }
       }
 
-      // Check if the recording contains any excluded tags
-      if (
-        recording.tags &&
-        recording.tags.some((tag: { name: string }) => this.settings.excludeTags.includes(tag.name))
-      ) {
-        unsyncedCount.count++;
-        return;
-      }
-
       // Check if the note already exists
       const noteExists = await this.app.vault.adapter.exists(recordingPath);
 
@@ -332,6 +323,8 @@ export default class VoiceNotesPlugin extends Plugin {
       this.vnApi = new VoiceNotesApi({
         token: this.settings.token,
         lastSyncedNoteUpdatedAt: this.settings.lastSyncedNoteUpdatedAt,
+        filterTags: this.settings.excludeTags,
+        tagFilterMode: this.settings.tagFilterMode,
       });
 
       const voiceNotesDir = normalizePath(this.settings.syncDirectory);
