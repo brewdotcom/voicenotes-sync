@@ -26,8 +26,15 @@ export class VoiceNotesSettingTab extends PluginSettingTab {
     }
 
     this.vnApi.setToken(this.getSetting('token')!);
-    const userInfo = await this.vnApi.getUserInfo();
-    await this.renderUserSection(containerEl, userInfo);
+    // Use cached user info to avoid API call on every settings open
+    let userInfo = this.getSetting('cachedUserInfo');
+    if (!userInfo) {
+      userInfo = await this.vnApi.getUserInfo();
+      if (userInfo) {
+        await this.setSetting('cachedUserInfo', userInfo);
+      }
+    }
+    await this.renderUserSection(containerEl, userInfo!);
     await this.renderSyncSettings(containerEl);
     await this.renderContentSettings(containerEl);
     await this.renderTemplateSettings(containerEl);
@@ -378,6 +385,8 @@ export class VoiceNotesSettingTab extends PluginSettingTab {
     const response = await this.vnApi.getUserInfo();
 
     if (response) {
+      // Cache user info on successful login
+      await this.setSetting('cachedUserInfo', response);
       await this.plugin.saveSettings();
       await this.display();
       this.plugin.setupAutoSync();
@@ -391,6 +400,7 @@ export class VoiceNotesSettingTab extends PluginSettingTab {
     new Notice('Successfully logged out.');
     await this.setSetting('token', null);
     await this.setSetting('lastSyncedNoteUpdatedAt', null);
+    await this.setSetting('cachedUserInfo', null);
     await this.display();
   }
 

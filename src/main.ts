@@ -55,10 +55,13 @@ export default class VoiceNotesPlugin extends Plugin {
       })
     );
 
-    // Timeout to give the app time to load
-    setTimeout(async () => {
-      await this.sync();
-    }, 1000);
+    // Defer initial sync until layout is ready (faster plugin load)
+    this.app.workspace.onLayoutReady(() => {
+      // Only sync if we have a token and automatic sync is enabled
+      if (this.settings.token && this.settings.automaticSync) {
+        this.sync();
+      }
+    });
   }
 
   onunload() {

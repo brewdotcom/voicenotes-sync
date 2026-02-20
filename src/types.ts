@@ -22,6 +22,7 @@ export interface VoiceNotesPluginSettings {
   useCustomChangedAtProperty: boolean;
   customChangedAtProperty: string;
   lastSyncedNoteUpdatedAt?: string;
+  cachedUserInfo?: User | null;
 }
 
 export interface User {
