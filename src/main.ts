@@ -15,7 +15,6 @@ export default class VoiceNotesPlugin extends Plugin {
   vnApi: VoiceNotesApi;
   fs: DataAdapter;
   syncedRecording: Pick<VoiceNote, 'recording_id' | 'updated_at'>[] = [];
-  deletedLocalRecordings: Pick<VoiceNote, 'recording_id' | 'updated_at'>[] = [];
   syncIntervalId: NodeJS.Timeout | null = null;
   recordingUtility: RecordingUtility;
 
@@ -42,10 +41,10 @@ export default class VoiceNotesPlugin extends Plugin {
             (r) => r.recording_id !== prevCache.frontmatter?.recording_id
           );
 
-          this.deletedLocalRecordings.push({
-            recording_id: prevCache.frontmatter?.recording_id,
-            updated_at: prevCache.frontmatter?.updated_at,
-          });
+          if (!this.settings.deletedLocalRecordingIds) {
+            this.settings.deletedLocalRecordingIds = [];
+          }
+          this.settings.deletedLocalRecordingIds.push(prevCache.frontmatter?.recording_id);
 
           this.settings.lastSyncedNoteUpdatedAt = this.syncedRecording.length > 0
             ? RecordingUtility.getLatestNote(this.syncedRecording)?.updated_at
@@ -66,8 +65,6 @@ export default class VoiceNotesPlugin extends Plugin {
 
   onunload() {
     this.syncedRecording = [];
-    this.deletedLocalRecordings = [];
-    this.settings.lastSyncedNoteUpdatedAt = null;
     this.clearAutoSync();
   }
 
@@ -326,6 +323,7 @@ export default class VoiceNotesPlugin extends Plugin {
       this.vnApi = new VoiceNotesApi({
         token: this.settings.token,
         lastSyncedNoteUpdatedAt: this.settings.lastSyncedNoteUpdatedAt,
+        deletedLocalRecordingIds: this.settings.deletedLocalRecordingIds ?? [],
         filterTags: this.settings.excludeTags,
         tagFilterMode: this.settings.tagFilterMode,
       });
@@ -366,6 +364,12 @@ export default class VoiceNotesPlugin extends Plugin {
           this.settings.lastSyncedNoteUpdatedAt = new Date(maxTs).toISOString();
         }
 
+        await this.saveSettings();
+      }
+
+      // Clear deleted recording IDs after successful sync (they've been sent to the server)
+      if (this.settings.deletedLocalRecordingIds?.length) {
+        this.settings.deletedLocalRecordingIds = [];
         await this.saveSettings();
       }
 

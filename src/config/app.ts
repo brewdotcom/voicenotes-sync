@@ -116,6 +116,7 @@ Date: {{ date }}
       dateFormat: 'YYYY-MM-DD',
       useCustomChangedAtProperty: false,
       customChangedAtProperty: 'created_at',
+      deletedLocalRecordingIds: [],
     };
   }
 }

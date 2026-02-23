@@ -23,6 +23,7 @@ export interface VoiceNotesPluginSettings {
   customChangedAtProperty: string;
   lastSyncedNoteUpdatedAt?: string;
   cachedUserInfo?: User | null;
+  deletedLocalRecordingIds?: string[];
 }
 
 export interface User {

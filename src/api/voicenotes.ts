@@ -1,11 +1,11 @@
 import { DataAdapter, Notice, requestUrl, RequestUrlResponse } from 'obsidian';
-import { User, VoiceNote, VoiceNoteRecordings, VoiceNoteSignedUrl } from '../types';
+import { User, VoiceNoteRecordings, VoiceNoteSignedUrl } from '../types';
 import { API_ROUTES, BASE_API_URL } from '@/constants';
 
 type VoiceNotesApiOptions = {
   token?: string;
   lastSyncedNoteUpdatedAt?: string;
-  deletedLocalRecordings?: Pick<VoiceNote, 'recording_id' | 'updated_at'>[];
+  deletedLocalRecordingIds?: string[];
   filterTags?: string[];
   tagFilterMode?: 'include' | 'exclude';
 };
@@ -18,7 +18,7 @@ export default class VoiceNotesApi {
    */
   private lastSyncedNoteUpdatedAt?: string;
 
-  private deletedLocalRecordings: Pick<VoiceNote, 'recording_id' | 'updated_at'>[] = [];
+  private deletedLocalRecordingIds: string[] = [];
 
   private filterTags: string[] = [];
 
@@ -33,8 +33,8 @@ export default class VoiceNotesApi {
       this.lastSyncedNoteUpdatedAt = options.lastSyncedNoteUpdatedAt;
     }
 
-    if (options.deletedLocalRecordings) {
-      this.deletedLocalRecordings = options.deletedLocalRecordings;
+    if (options.deletedLocalRecordingIds) {
+      this.deletedLocalRecordingIds = options.deletedLocalRecordingIds;
     }
 
     if (options.filterTags) {
@@ -247,7 +247,7 @@ export default class VoiceNotesApi {
     try {
       const options: Partial<RequestInit> = {
         body: JSON.stringify({
-          obsidian_deleted_recording_ids: this.deletedLocalRecordings.map((r) => r.recording_id),
+          obsidian_deleted_recording_ids: this.deletedLocalRecordingIds,
           last_synced_note_updated_at: this.lastSyncedNoteUpdatedAt,
           filter_tags: this.filterTags,
           tag_filter_mode: this.tagFilterMode,
