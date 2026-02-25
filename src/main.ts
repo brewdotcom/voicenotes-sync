@@ -346,6 +346,7 @@ export default class VoiceNotesPlugin extends Plugin {
         let nextPage = recordings.links.next;
 
         do {
+          await new Promise((resolve) => setTimeout(resolve, 2000));
           const moreRecordings = await this.vnApi.getRecordingsFromLink(nextPage);
           recordings.data.push(...moreRecordings.data);
           nextPage = moreRecordings.links.next;
