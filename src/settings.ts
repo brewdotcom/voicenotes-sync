@@ -241,10 +241,8 @@ export class VoiceNotesSettingTab extends PluginSettingTab {
           .onChange(async (value) => {
             const tags = value.split(',').map((t) => t.trim()).filter((t) => t.length > 0);
             await this.setSetting('excludeTags', tags);
-            // Reset lastSyncedNoteUpdatedAt when include tags change so old notes with new tags can be synced
-            if (this.getSetting('tagFilterMode') === 'include') {
-              await this.setSetting('lastSyncedNoteUpdatedAt', null);
-            }
+            // Reset lastSyncedNoteUpdatedAt when tags change so filtered notes can be re-evaluated
+            await this.setSetting('lastSyncedNoteUpdatedAt', null);
           })
       );
   }
@@ -405,6 +403,7 @@ export class VoiceNotesSettingTab extends PluginSettingTab {
     await this.setSetting('token', null);
     await this.setSetting('lastSyncedNoteUpdatedAt', null);
     await this.setSetting('cachedUserInfo', null);
+    await this.setSetting('deletedLocalRecordingIds', []);
     await this.display();
   }
 
