@@ -19,6 +19,12 @@ updated_at: {{updated_at}}
 
 Date: {{ date }}
 
+{% if team_summary %}
+## Meeting Report
+
+{{ team_summary }}
+{% endif %}
+
 {% if summary %}
 ## Summary
 

@@ -145,10 +145,10 @@ export default class VoiceNotesPlugin extends Plugin {
       // Check if the note already exists
       const noteExists = await this.app.vault.adapter.exists(recordingPath);
 
-      // If the note doesn't exist, or if it's a sub-note, it's treated as follows
+      // If the note doesn't exist, or if it's a sub-note, process it
       if (!noteExists || isSubnote) {
         // Prepare data for the template
-        const creationTypes = ['summary', 'points', 'tidy', 'todo', 'tweet', 'blog', 'email', 'custom'];
+        const creationTypes = ['summary', 'points', 'tidy', 'todo', 'tweet', 'blog', 'email', 'custom', 'team-summary'];
         const creations = Object.fromEntries(
           creationTypes.map((type) => [
             type,
@@ -159,7 +159,7 @@ export default class VoiceNotesPlugin extends Plugin {
         const { transcript } = recording;
 
         // Destructure creations object to get individual variables if needed
-        const { summary, points, tidy, todo, tweet, blog, email, custom } = creations;
+        const { summary, points, tidy, todo, tweet, blog, email, custom, 'team-summary': teamSummary } = creations;
 
         let embeddedAudioLink = '';
         let audioFilename = '';
@@ -234,6 +234,7 @@ export default class VoiceNotesPlugin extends Plugin {
           blog: blog ? blog.markdown_content : null,
           email: email ? email.markdown_content : null,
           custom: custom ? custom.markdown_content : null,
+          team_summary: teamSummary ? teamSummary.markdown_content : null,
           tags: formattedTags,
           related_notes:
             recording.related_notes && recording.related_notes.length > 0
@@ -268,8 +269,9 @@ export default class VoiceNotesPlugin extends Plugin {
 
         note = metadata + note;
 
-        // Create or update note
-        if (noteExists) {
+        // Create or update note — re-check existence since another recording
+        // in the same sync batch may have created a file with the same title
+        if (await this.app.vault.adapter.exists(recordingPath)) {
           await this.app.vault.modify(this.app.vault.getFileByPath(recordingPath) as TFile, note);
         } else {
           await this.app.vault.create(recordingPath, note);
