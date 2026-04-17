@@ -171,8 +171,10 @@ export default class VoiceNotesPlugin extends Plugin {
           }
           const outputLocationPath = normalizePath(`${audioPath}/${recording.recording_id}.mp3`);
           if (!(await this.app.vault.adapter.exists(outputLocationPath))) {
-            const signedUrl = await this.vnApi.getSignedUrl(recording.recording_id);
-            await this.vnApi.downloadFile(this.fs, signedUrl.url, outputLocationPath);
+            const audioUrl = recording.recording_signed_url ?? (await this.vnApi.getSignedUrl(recording.recording_id))?.url;
+            if (audioUrl) {
+              await this.vnApi.downloadFile(this.fs, audioUrl, outputLocationPath);
+            }
           }
           embeddedAudioLink = `![[${recording.recording_id}.mp3]]`;
           audioFilename = `${recording.recording_id}.mp3`;
