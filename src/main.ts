@@ -193,7 +193,9 @@ export default class VoiceNotesPlugin extends Plugin {
                 } else if (data.type === AttachmentType.IMAGE) {
                   const filename = FileHelper.getFilenameFromUrl(data.url);
                   const attachmentPath = normalizePath(`${attachmentsPath}/${filename}`);
-                  await this.vnApi.downloadFile(this.fs, data.url, attachmentPath);
+                  if (!(await this.app.vault.adapter.exists(attachmentPath))) {
+                    await this.vnApi.downloadFile(this.fs, data.url, attachmentPath);
+                  }
                   return `- ![[${filename}]]`;
                 }
                 return ''; // Return empty string for unknown attachment types
