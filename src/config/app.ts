@@ -19,6 +19,12 @@ updated_at: {{updated_at}}
 
 Date: {{ date }}
 
+{% if my_notes %}
+## My notes
+
+{{ my_notes }}
+{% endif %}
+
 {% if team_summary %}
 ## Meeting Report
 
@@ -99,13 +105,13 @@ Date: {{ date }}
 {% endif %}
 
 {% if related_notes %}
-# Related Notes
+# Related notes
 
 {{ related_notes }}
 {% endif %}
 
 {% if parent_note %}
-## Parent Note
+## Parent note
 
 - {{ parent_note }}
 {% endif %}

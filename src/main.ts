@@ -180,28 +180,31 @@ export default class VoiceNotesPlugin extends Plugin {
 
         // Handle attachments
         let attachments = '';
+        let myNotes = '';
         if (recording.attachments && recording.attachments.length > 0) {
           const attachmentsPath = normalizePath(`${voiceNotesDir}/attachments`);
           if (!(await this.app.vault.adapter.exists(attachmentsPath))) {
             await this.app.vault.createFolder(attachmentsPath);
           }
-          attachments = (
-            await Promise.all(
-              recording.attachments.map(async (data: VoiceNoteAttachment) => {
-                if (data.type === AttachmentType.LINK) {
-                  return `- ${data.description}`;
-                } else if (data.type === AttachmentType.IMAGE) {
-                  const filename = FileHelper.getFilenameFromUrl(data.url);
-                  const attachmentPath = normalizePath(`${attachmentsPath}/${filename}`);
-                  if (!(await this.app.vault.adapter.exists(attachmentPath))) {
-                    await this.vnApi.downloadFile(this.fs, data.url, attachmentPath);
-                  }
-                  return `- ![[${filename}]]`;
+          const attachmentResults = await Promise.all(
+            recording.attachments.map(async (data: VoiceNoteAttachment) => {
+              if (data.type === AttachmentType.TEXT) {
+                return { type: 'note', value: `${data.description}` };
+              } else if (data.type === AttachmentType.LINK) {
+                return { type: 'attachment', value: `- ${data.description}` };
+              } else if (data.type === AttachmentType.IMAGE) {
+                const filename = FileHelper.getFilenameFromUrl(data.url);
+                const attachmentPath = normalizePath(`${attachmentsPath}/${filename}`);
+                if (!(await this.app.vault.adapter.exists(attachmentPath))) {
+                  await this.vnApi.downloadFile(this.fs, data.url, attachmentPath);
                 }
-                return ''; // Return empty string for unknown attachment types
-              })
-            )
-          ).join('\n');
+                return { type: 'attachment', value: `- ![[${filename}]]` };
+              }
+              return { type: 'attachment', value: '' };
+            })
+          );
+          attachments = attachmentResults.filter(r => r.type === 'attachment' && r.value).map(r => r.value).join('\n');
+          myNotes = attachmentResults.filter(r => r.type === 'note' && r.value).map(r => r.value).join('\n');
         }
 
         // Prepare context for Jinja template
@@ -252,6 +255,7 @@ export default class VoiceNotesPlugin extends Plugin {
                   .join('\n')
               : null,
           attachments: attachments,
+          my_notes: myNotes,
           parent_note: isSubnote ? `[[${parentTitle}]]` : null,
         };
 
