@@ -14,8 +14,12 @@ export class DataAdapter {
 }
 
 // Mock Notice
+export const noticeMock = jest.fn();
+
 export class Notice {
-  constructor(public message: string) {}
+  constructor(public message: string) {
+    noticeMock(message);
+  }
 }
 
 // Mock other commonly used Obsidian exports
@@ -34,6 +38,10 @@ export class Plugin {
   
   loadData = jest.fn();
   saveData = jest.fn();
+  addCommand = jest.fn();
+  addSettingTab = jest.fn();
+  registerEvent = jest.fn();
+  registerDomEvent = jest.fn();
 }
 
 // Mock PluginSettingTab

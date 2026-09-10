@@ -163,9 +163,10 @@ export class VoiceNotesSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Automatic sync')
-      .setDesc('Enable automatic syncing of voice notes at regular intervals')
+      .setDesc('Enable automatic syncing. Instant sync checks every 30 seconds while Obsidian is open.')
       .addDropdown((dropdown) => {
         const options: Record<string, string> = {
+          '0.5': 'Instant (every 30 seconds)',
           '60': 'Every 1 hour',
           '180': 'Every 3 hours',
           '360': 'Every 6 hours',
@@ -173,7 +174,7 @@ export class VoiceNotesSettingTab extends PluginSettingTab {
           '1440': 'Every day',
         };
 
-        const current = String(this.getSetting('syncTimeout') ?? 30);
+        const current = String(this.getSetting('syncTimeout') ?? 180);
         if (!options[current]) {
           options[current] = `${current} minutes`;
         }

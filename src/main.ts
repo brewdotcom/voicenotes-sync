@@ -10,6 +10,10 @@ import { AttachmentType } from './enums';
 import { RecordingUtility } from './utilities';
 import { DateTimeHelper, FileHelper } from './helpers';
 
+interface SyncOptions {
+  silent?: boolean;
+}
+
 export default class VoiceNotesPlugin extends Plugin {
   settings: VoiceNotesPluginSettings;
   vnApi: VoiceNotesApi;
@@ -18,6 +22,8 @@ export default class VoiceNotesPlugin extends Plugin {
   deletedLocalRecordings: Pick<VoiceNote, 'recording_id' | 'updated_at'>[] = [];
   syncIntervalId: NodeJS.Timeout | null = null;
   recordingUtility: RecordingUtility;
+  private syncPromise: Promise<boolean> | null = null;
+  private consecutiveSyncFailures = 0;
 
   constructor(app: App, manifest: PluginManifest) {
     super(app, manifest);
@@ -35,6 +41,22 @@ export default class VoiceNotesPlugin extends Plugin {
 
     registerCommands(this);
 
+    this.registerDomEvent(document, 'visibilitychange', () => {
+      if (!this.isInstantSync()) {
+        return;
+      }
+      if (document.visibilityState === 'visible') {
+        void this.handleAppBecameActive();
+      } else {
+        this.clearAutoSync();
+      }
+    });
+    this.registerDomEvent(window, 'focus', () => {
+      if (this.isInstantSync()) {
+        void this.handleAppBecameActive();
+      }
+    });
+
     this.registerEvent(
       this.app.metadataCache.on('deleted', async (deletedFile, prevCache) => {
         if (prevCache.frontmatter?.recording_id) {
@@ -47,17 +69,18 @@ export default class VoiceNotesPlugin extends Plugin {
             updated_at: prevCache.frontmatter?.updated_at,
           });
 
-          this.settings.lastSyncedNoteUpdatedAt = this.syncedRecording.length > 0
-            ? RecordingUtility.getLatestNote(this.syncedRecording)?.updated_at
-            : null;
+          this.settings.lastSyncedNoteUpdatedAt =
+            this.syncedRecording.length > 0 ? RecordingUtility.getLatestNote(this.syncedRecording)?.updated_at : null;
           await this.saveSettings();
         }
       })
     );
 
-    // Timeout to give the app time to load
+    // Timeout to give the app time to load.
     setTimeout(async () => {
-      await this.sync();
+      if (this.settings.token && this.settings.automaticSync) {
+        await this.sync({ silent: true });
+      }
     }, 1000);
   }
 
@@ -79,14 +102,15 @@ export default class VoiceNotesPlugin extends Plugin {
 
   setupAutoSync() {
     this.clearAutoSync();
-    if (this.settings.automaticSync) {
-      this.syncIntervalId = setInterval(
-        () => {
-          this.sync();
-        },
-        this.settings.syncTimeout * 60 * 1000
-      );
+    if (!this.settings.automaticSync || !this.settings.token) {
+      return;
     }
+
+    if (this.isInstantSync() && document.visibilityState === 'hidden') {
+      return;
+    }
+
+    this.scheduleAutoSync(this.getNextSyncDelay());
   }
 
   clearAutoSync() {
@@ -94,6 +118,48 @@ export default class VoiceNotesPlugin extends Plugin {
       clearInterval(this.syncIntervalId);
       this.syncIntervalId = null;
     }
+  }
+
+  private isInstantSync(): boolean {
+    return this.settings.syncTimeout === 0.5;
+  }
+
+  private getNextSyncDelay(): number {
+    const baseDelay = (this.settings.syncTimeout ?? 180) * 60 * 1000;
+    if (!this.isInstantSync() || this.consecutiveSyncFailures === 0) {
+      return baseDelay;
+    }
+
+    return Math.min(baseDelay * 2 ** this.consecutiveSyncFailures, 5 * 60 * 1000);
+  }
+
+  private scheduleAutoSync(delay: number): void {
+    this.clearAutoSync();
+    this.syncIntervalId = setTimeout(async () => {
+      this.syncIntervalId = null;
+
+      if (this.isInstantSync() && document.visibilityState === 'hidden') {
+        return;
+      }
+
+      const succeeded = await this.sync({ silent: true });
+      this.consecutiveSyncFailures = succeeded ? 0 : this.consecutiveSyncFailures + 1;
+
+      if (this.settings.automaticSync && this.settings.token) {
+        this.scheduleAutoSync(this.getNextSyncDelay());
+      }
+    }, delay);
+  }
+
+  private async handleAppBecameActive(): Promise<void> {
+    if (!this.isInstantSync() || !this.settings.automaticSync || !this.settings.token) {
+      return;
+    }
+
+    this.clearAutoSync();
+    const succeeded = await this.sync({ silent: true });
+    this.consecutiveSyncFailures = succeeded ? 0 : this.consecutiveSyncFailures + 1;
+    this.scheduleAutoSync(this.getNextSyncDelay());
   }
 
   /**
@@ -324,7 +390,19 @@ export default class VoiceNotesPlugin extends Plugin {
     }
   }
 
-  async sync() {
+  async sync(options: SyncOptions = {}): Promise<boolean> {
+    if (this.syncPromise) {
+      return this.syncPromise;
+    }
+
+    this.syncPromise = this.performSync(options).finally(() => {
+      this.syncPromise = null;
+    });
+
+    return this.syncPromise;
+  }
+
+  private async performSync({ silent = false }: SyncOptions): Promise<boolean> {
     try {
       this.syncedRecording = await this.getSyncedRecordings();
 
@@ -335,7 +413,9 @@ export default class VoiceNotesPlugin extends Plugin {
 
       const voiceNotesDir = normalizePath(this.settings.syncDirectory);
       if (!(await this.app.vault.adapter.exists(voiceNotesDir))) {
-        new Notice('Creating sync directory for Voice Notes Sync plugin');
+        if (!silent) {
+          new Notice('Creating sync directory for Voice Notes Sync plugin');
+        }
         await this.app.vault.createFolder(voiceNotesDir);
       }
 
@@ -343,7 +423,7 @@ export default class VoiceNotesPlugin extends Plugin {
       // This only happens if we aren't actually logged in, fail immediately.
       if (recordings === null) {
         this.settings.token = undefined;
-        return;
+        return false;
       }
       const unsyncedCount = { count: 0 };
 
@@ -372,9 +452,12 @@ export default class VoiceNotesPlugin extends Plugin {
         await this.saveSettings();
       }
 
-      new Notice(
-        `Voicenotes Sync complete. ${unsyncedCount.count ? unsyncedCount.count + ' recordings were not synced due to excluded tags.' : ''} `
-      );
+      if (!silent) {
+        new Notice(
+          `Voicenotes Sync complete. ${unsyncedCount.count ? unsyncedCount.count + ' recordings were not synced due to excluded tags.' : ''} `
+        );
+      }
+      return true;
     } catch (error) {
       console.error(error);
       if (Object.prototype.hasOwnProperty.call(error, 'status')) {
@@ -383,12 +466,13 @@ export default class VoiceNotesPlugin extends Plugin {
           this.settings.token = undefined;
           await this.saveSettings();
           new Notice(`Login token was invalid, please try logging in again.`);
-        } else {
+        } else if (!silent) {
           new Notice(`Error occurred syncing some notes to this vault.`);
         }
-      } else {
+      } else if (!silent) {
         new Notice(`Error occurred syncing some notes to this vault.`);
       }
+      return false;
     }
   }
 }
