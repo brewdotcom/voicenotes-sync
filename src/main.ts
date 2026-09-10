@@ -34,6 +34,8 @@ export default class VoiceNotesPlugin extends Plugin {
 
     registerCommands(this);
 
+    this.registerDomEvent(document, 'visibilitychange', () => this.handleVisibilityChange());
+
     this.registerEvent(
       this.app.metadataCache.on('deleted', async (deletedFile, prevCache) => {
         if (prevCache.frontmatter?.recording_id) {
@@ -58,7 +60,7 @@ export default class VoiceNotesPlugin extends Plugin {
     this.app.workspace.onLayoutReady(() => {
       // Only sync if we have a token and automatic sync is enabled
       if (this.settings.token && this.settings.automaticSync) {
-        this.sync();
+        void this.syncNowAndRestartAutoSync();
       }
     });
   }
@@ -79,7 +81,7 @@ export default class VoiceNotesPlugin extends Plugin {
 
   setupAutoSync() {
     this.clearAutoSync();
-    if (this.settings.automaticSync) {
+    if (this.settings.automaticSync && this.settings.token) {
       this.syncIntervalId = setInterval(
         () => {
           this.sync();
@@ -93,6 +95,27 @@ export default class VoiceNotesPlugin extends Plugin {
     if (this.syncIntervalId) {
       clearInterval(this.syncIntervalId);
       this.syncIntervalId = null;
+    }
+  }
+
+  private async syncNowAndRestartAutoSync(): Promise<void> {
+    this.clearAutoSync();
+    try {
+      await this.sync();
+    } finally {
+      this.setupAutoSync();
+    }
+  }
+
+  private handleVisibilityChange(): void {
+    const shouldSyncOnResume =
+      document.visibilityState === 'visible' &&
+      this.settings.automaticSync &&
+      this.settings.syncTimeout === 1 &&
+      Boolean(this.settings.token);
+
+    if (shouldSyncOnResume) {
+      void this.syncNowAndRestartAutoSync();
     }
   }
 
