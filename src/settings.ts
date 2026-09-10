@@ -173,7 +173,7 @@ export class VoiceNotesSettingTab extends PluginSettingTab {
       .setDesc('Enable automatic syncing of voice notes at regular intervals')
       .addDropdown((dropdown) => {
         const options: Record<string, string> = {
-          '1': 'Instant',
+          '1': 'Every minute',
           '60': 'Every 1 hour',
           '180': 'Every 3 hours',
           '360': 'Every 6 hours',
