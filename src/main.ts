@@ -1,4 +1,4 @@
-import { App, DataAdapter, normalizePath, Notice, Plugin, PluginManifest, TFile } from 'obsidian';
+import { App, DataAdapter, normalizePath, Notice, Plugin, PluginManifest } from 'obsidian';
 import VoiceNotesApi from './api/voicenotes';
 import { VoiceNote, VoiceNoteAttachment, VoiceNotesPluginSettings } from './types';
 import { VoiceNotesSettingTab } from './settings';
@@ -9,6 +9,10 @@ import { registerCommands } from './commands';
 import { AttachmentType } from './enums';
 import { RecordingUtility } from './utilities';
 import { DateTimeHelper, FileHelper } from './helpers';
+
+const MANAGED_CONTENT_END = '<!-- voicenotes-sync:managed-content:end -->';
+const MANAGED_CONTENT_PATTERN =
+  /<!-- voicenotes-sync:managed-content:start hash="([a-f0-9]+)" -->\n([\s\S]*?)\n<!-- voicenotes-sync:managed-content:end -->/;
 
 export default class VoiceNotesPlugin extends Plugin {
   settings: VoiceNotesPluginSettings;
@@ -142,6 +146,51 @@ export default class VoiceNotesPlugin extends Plugin {
     return recordings.filter((r): r is Pick<VoiceNote, 'recording_id' | 'updated_at'> => r !== null);
   }
 
+  private hashManagedContent(content: string): string {
+    let hash = 2166136261;
+    for (let index = 0; index < content.length; index++) {
+      hash ^= content.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0).toString(16).padStart(8, '0');
+  }
+
+  private wrapManagedContent(content: string): string {
+    const hash = this.hashManagedContent(content);
+    return `<!-- voicenotes-sync:managed-content:start hash="${hash}" -->\n${content}\n${MANAGED_CONTENT_END}`;
+  }
+
+  private hasUnmodifiedManagedContent(note: string): boolean {
+    const match = note.match(MANAGED_CONTENT_PATTERN);
+    return match !== null && this.hashManagedContent(match[2]) === match[1];
+  }
+
+  private replaceManagedContent(note: string, content: string): string | null {
+    const match = note.match(MANAGED_CONTENT_PATTERN);
+    if (!match || this.hashManagedContent(match[2]) !== match[1] || match.index === undefined) {
+      return null;
+    }
+
+    return (
+      note.slice(0, match.index) +
+      this.wrapManagedContent(content) +
+      note.slice(match.index + match[0].length)
+    );
+  }
+
+  private getLatestSyncTimestamp(recordings: Pick<VoiceNote, 'updated_at'>[]): string | undefined {
+    if (recordings.length === 0) {
+      return this.settings.lastSyncedNoteUpdatedAt;
+    }
+
+    const latestTimestamp = new Date(RecordingUtility.getLatestNote(recordings).updated_at).toISOString();
+    const currentTimestamp = this.settings.lastSyncedNoteUpdatedAt;
+    if (!currentTimestamp || new Date(latestTimestamp) > new Date(currentTimestamp)) {
+      return latestTimestamp;
+    }
+    return currentTimestamp;
+  }
+
   async processNote(
     recording: VoiceNote,
     voiceNotesDir: string,
@@ -167,9 +216,18 @@ export default class VoiceNotesPlugin extends Plugin {
 
       // Check if the note already exists
       const noteExists = await this.app.vault.adapter.exists(recordingPath);
+      let canRefreshExistingNote = false;
+      if (noteExists && !isSubnote) {
+        const existingFile = this.app.vault.getFileByPath(recordingPath);
+        if (existingFile) {
+          const existingNote = await this.app.vault.read(existingFile);
+          canRefreshExistingNote = this.hasUnmodifiedManagedContent(existingNote);
+        }
+      }
 
-      // If the note doesn't exist, or if it's a sub-note, process it
-      if (!noteExists || isSubnote) {
+      // New notes and subnotes use the normal rendering path. Existing top-level
+      // notes are refreshed only when their plugin-managed content is unedited.
+      if (!noteExists || isSubnote || canRefreshExistingNote) {
         // Prepare data for the template
         const creationTypes = ['summary', 'points', 'tidy', 'todo', 'tweet', 'blog', 'email', 'custom', 'team-summary'];
         const creations = Object.fromEntries(
@@ -295,12 +353,21 @@ export default class VoiceNotesPlugin extends Plugin {
 
         const metadata = `---\n${renderedFrontmatter}\n---\n`;
 
-        note = metadata + note;
+        const renderedNoteContent = note;
+        const managedNote = this.wrapManagedContent(renderedNoteContent);
+        note = metadata + managedNote;
 
         // Create or update note — re-check existence since another recording
         // in the same sync batch may have created a file with the same title
-        if (await this.app.vault.adapter.exists(recordingPath)) {
-          await this.app.vault.modify(this.app.vault.getFileByPath(recordingPath) as TFile, note);
+        const existingFile = this.app.vault.getFileByPath(recordingPath);
+        if (existingFile && noteExists && !isSubnote) {
+          const currentNote = await this.app.vault.read(existingFile);
+          const refreshedNote = this.replaceManagedContent(currentNote, renderedNoteContent);
+          if (refreshedNote !== null && refreshedNote !== currentNote) {
+            await this.app.vault.modify(existingFile, refreshedNote);
+          }
+        } else if (existingFile) {
+          await this.app.vault.modify(existingFile, note);
         } else {
           await this.app.vault.create(recordingPath, note);
         }
@@ -316,7 +383,7 @@ export default class VoiceNotesPlugin extends Plugin {
           });
         }
 
-        if (this.settings.deleteSynced && this.settings.reallyDeleteSynced) {
+        if ((!noteExists || isSubnote) && this.settings.deleteSynced && this.settings.reallyDeleteSynced) {
           await this.vnApi.deleteRecording(recording.recording_id);
         }
       }
@@ -392,10 +459,7 @@ export default class VoiceNotesPlugin extends Plugin {
 
         console.log(`Synced ${recordings.data.length} recordings from Voice Notes.`);
 
-        const maxTs = RecordingUtility.getLatestNote(recordings.data)?.updated_at;
-        if (maxTs) {
-          this.settings.lastSyncedNoteUpdatedAt = new Date(maxTs).toISOString();
-        }
+        this.settings.lastSyncedNoteUpdatedAt = this.getLatestSyncTimestamp(recordings.data);
 
         await this.saveSettings();
       }
