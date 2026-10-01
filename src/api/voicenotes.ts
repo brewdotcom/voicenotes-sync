@@ -8,10 +8,16 @@ type VoiceNotesApiOptions = {
   deletedLocalRecordingIds?: string[];
   filterTags?: string[];
   tagFilterMode?: 'include' | 'exclude';
+  pluginVersion?: string;
 };
 
 export default class VoiceNotesApi {
   private token?: string;
+
+  /**
+   * Plugin version from manifest.json, sent with every API request
+   */
+  private pluginVersion?: string;
 
   /**
    * Optional timestamp of the last synced note's updated_at property
@@ -43,6 +49,10 @@ export default class VoiceNotesApi {
 
     if (options.tagFilterMode) {
       this.tagFilterMode = options.tagFilterMode;
+    }
+
+    if (options.pluginVersion) {
+      this.pluginVersion = options.pluginVersion;
     }
   }
 
@@ -91,6 +101,10 @@ export default class VoiceNotesApi {
       Authorization: `Bearer ${this.token}`,
       'X-API-KEY': `${this.token}`,
     };
+
+    if (this.pluginVersion) {
+      headers['X-Obsidian-Plugin-Version'] = this.pluginVersion;
+    }
 
     // Merge in any additional headers from options
     if (options.headers) {
