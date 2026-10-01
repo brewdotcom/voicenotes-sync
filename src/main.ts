@@ -52,9 +52,8 @@ export default class VoiceNotesPlugin extends Plugin {
           }
           this.settings.deletedLocalRecordingIds.push(prevCache.frontmatter?.recording_id);
 
-          this.settings.lastSyncedNoteUpdatedAt = this.syncedRecording.length > 0
-            ? RecordingUtility.getLatestNote(this.syncedRecording)?.updated_at
-            : null;
+          // Keep the sync cursor as-is: the deleted ID is already excluded server-side, and
+          // frontmatter updated_at is formatted with the user's dateFormat, so it is not a valid cursor.
           await this.saveSettings();
         }
       })
