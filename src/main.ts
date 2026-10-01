@@ -424,6 +424,7 @@ export default class VoiceNotesPlugin extends Plugin {
         deletedLocalRecordingIds: this.settings.deletedLocalRecordingIds ?? [],
         filterTags: this.settings.excludeTags,
         tagFilterMode: this.settings.tagFilterMode,
+        pluginVersion: this.manifest.version,
       });
 
       const voiceNotesDir = normalizePath(this.settings.syncDirectory);

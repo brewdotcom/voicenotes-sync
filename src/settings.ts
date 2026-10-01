@@ -11,7 +11,7 @@ export class VoiceNotesSettingTab extends PluginSettingTab {
   constructor(app: App, plugin: VoiceNotesPlugin) {
     super(app, plugin);
     this.plugin = plugin;
-    this.vnApi = new VoiceNotesApi({});
+    this.vnApi = new VoiceNotesApi({ pluginVersion: plugin.manifest.version });
   }
 
   async display(): Promise<void> {
